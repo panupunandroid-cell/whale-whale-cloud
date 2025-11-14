@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import datetime as dt
+import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
@@ -316,7 +317,7 @@ with st.sidebar:
 
 st.title("🐳 วาฬวาฬ - บัญชีรายรับรายจ่าย (Cloud)")
 
-tab_income, tab_expense, tab_summary = st.tabs(["📥 รายรับ", "📤 รายจ่าย", "📊 ผลประกอบการ & กราฟ"])
+tab_income, tab_expense, tab_summary = st.tabs(["📥 รายรับ", "📤 รายจ่าย", "📊 ผลรวม & กราฟ"])
 
 # TAB รายรับ
 with tab_income:
@@ -396,6 +397,9 @@ with tab_expense:
             "จำนวนเงิน (บาท)": default_amounts,
         })
 
+        # ป้องกันไม่ให้มีค่า None ในคอลัมน์จำนวนเงิน (แก้ปัญหาแก้ไขไม่ได้บน iPad/Safari)
+        df_items["จำนวนเงิน (บาท)"] = pd.to_numeric(df_items["จำนวนเงิน (บาท)"], errors="coerce").fillna(0.0)
+
         edited_items = st.data_editor(
             df_items,
             key="expense_editor",
@@ -405,7 +409,7 @@ with tab_expense:
                 "เลือก": st.column_config.CheckboxColumn("เลือก"),
                 "รายการรายจ่าย": st.column_config.TextColumn("รายการรายจ่าย", disabled=True),
                 "จำนวนเงิน (บาท)": st.column_config.NumberColumn(
-                    "จำนวนเงิน (บาท)", min_value=0.0, step=10.0, format="%.2f"
+                    "จำนวนเงิน (บาท)", min_value=0.0, step=1.0, format="%.2f"
                 ),
             },
         )
@@ -452,6 +456,70 @@ with tab_summary:
 
         filtered, start_d, end_d = filter_by_mode(daily, mode, base_date)
 
+        # สร้างรายงานสรุปรายรับ-รายจ่ายในรูปแบบ HTML สำหรับพรีวิวและสั่งพิมพ์
+        if not filtered.empty:
+            total_income = float(filtered.get("รวมรับ", pd.Series(dtype=float)).sum())
+            total_expense = float(filtered.get("รวมจ่าย", pd.Series(dtype=float)).sum())
+            profit = total_income - total_expense
+
+            # เตรียมแถวตารางรายวัน
+            table_rows = ""
+            for _, r in filtered.iterrows():
+                day_label = r.get("วันที่แสดง", r.get("วันที่", ""))
+                try:
+                    inc_val = float(r.get("รวมรับ", 0) or 0)
+                except Exception:
+                    inc_val = 0.0
+                try:
+                    exp_val = float(r.get("รวมจ่าย", 0) or 0)
+                except Exception:
+                    exp_val = 0.0
+                prof_val = inc_val - exp_val
+                table_rows += f"<tr><td>{day_label}</td><td style='text-align:right;'>{inc_val:,.2f}</td><td style='text-align:right;'>{exp_val:,.2f}</td><td style='text-align:right;'>{prof_val:,.2f}</td></tr>"
+
+            period_text = start_d.strftime("%d/%m/%Y")
+            if end_d != start_d:
+                period_text = f"{start_d.strftime('%d/%m/%Y')} - {end_d.strftime('%d/%m/%Y')}"
+
+            report_html = f"""<html><head><meta charset='utf-8'>
+<style>
+body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:16px; color:#222; }}
+h2 {{ margin-top:0; }}
+table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
+th, td {{ border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }}
+th {{ background:#f1f3ff; text-align:center; }}
+.summary-box {{ margin-top:12px; padding:10px 12px; background:#f7fbff; border-radius:8px; border:1px solid #dde7ff; }}
+.btn-print {{ margin-top:12px; padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
+.btn-print:hover {{ opacity:0.9; }}
+</style>
+</head>
+<body>
+<h2>รายงานสรุปรายรับ–รายจ่าย</h2>
+<p>ช่วงวันที่: <strong>{period_text}</strong></p>
+<div class='summary-box'>
+    <div>รวมรายรับ: <strong>{total_income:,.2f}</strong> บาท</div>
+    <div>รวมรายจ่าย: <strong>{total_expense:,.2f}</strong> บาท</div>
+    <div>กำไรสุทธิ: <strong>{profit:,.2f}</strong> บาท</div>
+</div>
+<table>
+    <thead>
+        <tr>
+            <th>วันที่</th>
+            <th>รวมรับ (บาท)</th>
+            <th>รวมจ่าย (บาท)</th>
+            <th>กำไรต่อวัน (บาท)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {table_rows}
+    </tbody>
+</table>
+<button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
+</body></html>"""
+
+            st.markdown("#### พรีวิวรายงานสรุปรายรับ–รายจ่าย (HTML)")
+            components.html(report_html, height=500, scrolling=True)
+
         if filtered.empty:
             st.warning("ไม่มีข้อมูลในช่วงวันที่ที่เลือก")
         else:
@@ -474,7 +542,7 @@ with tab_summary:
                 use_container_width=True,
             )
 
-            st.markdown("#### กราฟ รายรับ-รายจ่าย ต่อวัน")
+            st.markdown("#### กราฟแท่ง รายรับ-รายจ่ายต่อวัน")
             chart_data = filtered.melt(
                 id_vars=["วันที่จริง"],
                 value_vars=["รวมรับ", "รวมจ่าย"],
