@@ -694,31 +694,32 @@ th {{ background:#f1f3ff; text-align:center; }}
             st.altair_chart(bar, use_container_width=True)
 
             st.markdown("#### กราฟวงกลม รายรับ / รายจ่าย ตามประเภท")
-            col_in, col_ex = st.columns(2)with col_in:
-    pie_inc_df = build_income_pie(start_d, end_d, base_date)
-    if pie_inc_df.empty:
-        st.info("ไม่มีข้อมูลรายรับสำหรับทำกราฟวงกลมในช่วงนี้")
-    else:
-        pie_inc = (
-            alt.Chart(pie_inc_df)
-            .mark_arc()
-            .encode(
-                theta="ยอดรวม:Q",
-                color=alt.Color(
-                    "ประเภท:N",
-                    scale=alt.Scale(
-                        domain=["Grab", "LINE Man", "Shopee", "คนละครึ่ง", "สแกน", "เงินสด"],
-                        range=["#003300", "#CCFFCC", "#FF7F00", "#87CEFA", "#FFFACD", "#FF66CC"],
-                    ),
-                ),
-                tooltip=["ประเภท:N", "ยอดรวม:Q"],
-            )
-            .properties(height=350)
-        )
-        st.altair_chart(pie_inc, use_container_width=True)
+            col_in, col_ex = st.columns(2)
 
-with col_ex:
+            with col_in:
+                pie_inc_df = build_income_pie(start_d, end_d, base_date)
+                if pie_inc_df.empty:
+                    st.info("ไม่มีข้อมูลรายรับสำหรับทำกราฟวงกลมในช่วงนี้")
+                else:
+                    pie_inc = (
+                        alt.Chart(pie_inc_df)
+                        .mark_arc()
+                        .encode(
+                            theta="ยอดรวม:Q",
+                            color=alt.Color(
+                                "ประเภท:N",
+                                scale=alt.Scale(
+                                    domain=["Grab", "LINE Man", "Shopee", "คนละครึ่ง", "สแกน", "เงินสด"],
+                                    range=["#003300", "#CCFFCC", "#FF7F00", "#87CEFA", "#FFFACD", "#FF66CC"],
+                                ),
+                            ),
+                            tooltip=["ประเภท:N", "ยอดรวม:Q"],
+                        )
+                        .properties(height=350)
+                    )
+                    st.altair_chart(pie_inc, use_container_width=True)
 
+            with col_ex:
                 pie_df = build_expense_pie(start_d, end_d, base_date)
                 if pie_df.empty:
                     st.info("ไม่มีข้อมูลรายจ่ายสำหรับทำกราฟวงกลมในช่วงนี้")
