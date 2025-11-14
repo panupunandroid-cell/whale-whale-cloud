@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -36,12 +35,14 @@ def get_gsheet_client():
     client = gspread.authorize(creds)
     return client
 
+
 def get_sheet_id_from_secrets():
     sheet_id = st.secrets.get("sheet_id", None)
     if sheet_id is None:
         sa = st.secrets.get("gcp_service_account", {})
         sheet_id = sa.get("sheet_id", None)
     return sheet_id
+
 
 @st.cache_resource
 def get_workbook():
@@ -66,6 +67,7 @@ def get_workbook():
         st.stop()
     return sh
 
+
 def ws_to_df(ws):
     data = ws.get_all_values()
     if not data:
@@ -76,20 +78,86 @@ def ws_to_df(ws):
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
+
+def _get_monthly_sheet_title(base_name: str, ref_date: dt.date) -> str:
+    """ชื่อชีตตามเดือน เช่น รายรับ_2025_11"""
+    return f"{base_name}_{ref_date.year}_{ref_date.month:02d}"
+
+
+def get_worksheet_for_month(base_name: str, ref_date: dt.date, kind: str, create_if_missing: bool):
+    """คืนค่า worksheet ของเดือนนั้น ๆ
+    - ถ้า create_if_missing=False: ถ้าไม่พบชีตตามเดือน จะ fallback ไปใช้ชีตพื้นฐาน (base_name)
+    - ถ้า create_if_missing=True: ถ้าไม่พบ จะพยายามสร้างชีตใหม่โดยใช้ชีตพื้นฐานเป็น template
+    kind: "income" หรือ "expense" เพื่อใช้กำหนด header เริ่มต้นเมื่อไม่มี template
+    """
+    sh = get_workbook()
+    monthly_title = _get_monthly_sheet_title(base_name, ref_date)
+
+    # ลองหาชีตตามเดือนก่อน
+    try:
+        return sh.worksheet(monthly_title)
+    except WorksheetNotFound:
+        pass
+
+    # ถ้าไม่ต้องการสร้างใหม่ ให้ fallback ไปใช้ชีตพื้นฐาน (ถ้ามี)
+    if not create_if_missing:
+        try:
+            return sh.worksheet(base_name)
+        except WorksheetNotFound:
+            st.error(f"ไม่พบชีต '{monthly_title}' หรือชีตพื้นฐาน '{base_name}' ในไฟล์ Google Sheets")
+            st.stop()
+
+    # ต้องการสร้างใหม่: พยายามใช้ชีตพื้นฐานเป็น template
+    template_data = []
+    try:
+        template_ws = sh.worksheet(base_name)
+        template_data = template_ws.get_all_values()
+    except WorksheetNotFound:
+        template_ws = None
+
+    if template_data:
+        header_row = template_data[0]
+        num_cols = len(header_row)
+        new_data = [header_row]
+
+        # คัดลอกเฉพาะชื่อแถว/วันที่ในคอลัมน์แรก ค่าอื่นให้เคลียร์ว่าง
+        for row in template_data[1:]:
+            first_col = row[0] if row else ""
+            new_row = [first_col] + [""] * (num_cols - 1)
+            new_data.append(new_row)
+
+        rows = len(new_data) + 5
+        cols = num_cols + 5
+        ws = sh.add_worksheet(title=monthly_title, rows=rows, cols=cols)
+        ws.update("A1", new_data)
+        return ws
+
+    # กรณีไม่มี template เลย สร้างโครงพื้นฐานใหม่
+    if kind == "income":
+        header = ["วันที่", "เงินสด", "สแกน", "คนละครึ่ง", "Grab", "Shopee", "LINE Man"]
+        rows = 32
+        cols = len(header)
+        ws = sh.add_worksheet(title=monthly_title, rows=rows, cols=cols)
+        ws.update("A1", [header])
+        # ใส่วันที่ 1-31 ในคอลัมน์แรก
+        date_values = [[str(i)] for i in range(1, 32)]
+        ws.update("A2", date_values)
+        return ws
+    else:
+        header = ["รายการรายจ่าย/วันที่"] + [str(i) for i in range(1, 32)]
+        rows = 50
+        cols = len(header)
+        ws = sh.add_worksheet(title=monthly_title, rows=rows, cols=cols)
+        ws.update("A1", [header])
+        return ws
+
+
 # ------------------------------
-# LOAD DATA
+# LOAD DATA (ตามเดือน)
 # ------------------------------
 @st.cache_data(ttl=60)
-def load_income_df():
-    sh = get_workbook()
-    try:
-        ws = sh.worksheet(INCOME_SHEET_NAME)
-    except WorksheetNotFound:
-        st.error(
-            f"ไม่พบชีตชื่อ '{INCOME_SHEET_NAME}' ในไฟล์ Google Sheets\n"
-            "ให้สร้าง/เปลี่ยนชื่อแท็บที่เป็นตารางรายรับให้เป็นชื่อนี้ แล้วลองใหม่อีกครั้ง"
-        )
-        st.stop()
+def load_income_df(ref_date: dt.date):
+    ws = get_worksheet_for_month(INCOME_SHEET_NAME, ref_date, kind="income", create_if_missing=False)
     df = ws_to_df(ws)
     if df.empty:
         return df
@@ -111,17 +179,10 @@ def load_income_df():
     df["รวมต่อวัน"] = df[income_cols].sum(axis=1)
     return df
 
+
 @st.cache_data(ttl=60)
-def load_expense_df():
-    sh = get_workbook()
-    try:
-        ws = sh.worksheet(EXPENSE_SHEET_NAME)
-    except WorksheetNotFound:
-        st.error(
-            f"ไม่พบชีตชื่อ '{EXPENSE_SHEET_NAME}' ในไฟล์ Google Sheets\n"
-            "ให้สร้าง/เปลี่ยนชื่อแท็บที่เป็นตารางรายจ่ายให้เป็นชื่อนี้ แล้วลองใหม่อีกครั้ง"
-        )
-        st.stop()
+def load_expense_df(ref_date: dt.date):
+    ws = get_worksheet_for_month(EXPENSE_SHEET_NAME, ref_date, kind="expense", create_if_missing=False)
     df = ws_to_df(ws)
     if df.empty:
         return df
@@ -137,16 +198,18 @@ def load_expense_df():
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
     return df
 
+
 # ------------------------------
 # UPDATE FUNCTIONS
 # ------------------------------
-def update_income_row(day, cash, scan, half, grab, shopee, lineman):
-    sh = get_workbook()
-    ws = sh.worksheet(INCOME_SHEET_NAME)
+def update_income_row(date_obj: dt.date, cash, scan, half, grab, shopee, lineman):
+    """อัปเดตรายรับของวันที่ในเดือนที่ระบุ ถ้าไม่มีชีตของเดือนนั้นจะสร้างใหม่ให้"""
+    ws = get_worksheet_for_month(INCOME_SHEET_NAME, date_obj, kind="income", create_if_missing=True)
     data = ws.get_all_values()
     if not data:
         st.error("ชีต 'รายรับ' ยังไม่มีโครงสร้างตาราง")
         return
+
     header = [str(h).strip() for h in data[0]]
     try:
         col_day = header.index("วันที่") + 1
@@ -156,6 +219,7 @@ def update_income_row(day, cash, scan, half, grab, shopee, lineman):
     def col_idx(name):
         return header.index(name) + 1 if name in header else None
 
+    day = date_obj.day
     target_row = None
     for i in range(1, len(data)):
         v = data[i][col_day - 1]
@@ -186,9 +250,10 @@ def update_income_row(day, cash, scan, half, grab, shopee, lineman):
 
     st.cache_data.clear()
 
-def update_expense_cell(day, item_name, amount):
-    sh = get_workbook()
-    ws = sh.worksheet(EXPENSE_SHEET_NAME)
+
+def update_expense_cell(date_obj: dt.date, day, item_name, amount):
+    """อัปเดตรายจ่ายของวันที่ในเดือนที่ระบุ ถ้าไม่มีชีตของเดือนนั้นจะสร้างใหม่ให้"""
+    ws = get_worksheet_for_month(EXPENSE_SHEET_NAME, date_obj, kind="expense", create_if_missing=True)
     data = ws.get_all_values()
     if not data:
         st.error("ชีต 'รายจ่าย' ยังไม่มีโครงสร้างตาราง")
@@ -214,12 +279,13 @@ def update_expense_cell(day, item_name, amount):
     ws.update_cell(target_row, col_day, float(amount) if amount is not None else 0)
     st.cache_data.clear()
 
+
 # ------------------------------
 # SUMMARY & CHART
 # ------------------------------
 def build_daily_summary(base_date: dt.date):
-    inc = load_income_df()
-    exp = load_expense_df()
+    inc = load_income_df(base_date)
+    exp = load_expense_df(base_date)
 
     if inc.empty:
         inc_daily = pd.DataFrame(columns=["วันที่", "รวมรับ"])
@@ -244,8 +310,9 @@ def build_daily_summary(base_date: dt.date):
     df = df.sort_values("วันที่จริง")
     return df
 
+
 def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date):
-    exp = load_expense_df()
+    exp = load_expense_df(base_date)
     if exp.empty:
         return pd.DataFrame(columns=["รายการ", "ยอดรวม"])
 
@@ -267,6 +334,7 @@ def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date
     df = df.rename(columns={"รายการรายจ่าย/วันที่": "รายการ"})
     return df
 
+
 def filter_by_mode(df_daily, mode: str, base_date: dt.date):
     if df_daily.empty:
         return df_daily, base_date, base_date
@@ -277,8 +345,12 @@ def filter_by_mode(df_daily, mode: str, base_date: dt.date):
         return df_daily[mask], target, target
 
     elif mode == "รายสัปดาห์":
-        start = st.date_input("วันเริ่มต้นสัปดาห์", value=base_date, key="sum_week_start")
-        end = start + dt.timedelta(days=6)
+        # ใช้สัปดาห์รูปแบบ พฤหัสบดี -> อังคาร
+        ref = st.date_input("เลือกวันในสัปดาห์", value=base_date, key="sum_week_ref")
+        # weekday(): Monday=0 ... Sunday=6, ดังนั้น Thursday=3
+        offset = (ref.weekday() - 3) % 7
+        start = ref - dt.timedelta(days=offset)
+        end = start + dt.timedelta(days=5)  # พฤหัสบดีถึงอังคาร รวม 6 วัน
         mask = (df_daily["วันที่จริง"] >= start) & (df_daily["วันที่จริง"] <= end)
         return df_daily[mask], start, end
 
@@ -304,6 +376,7 @@ def filter_by_mode(df_daily, mode: str, base_date: dt.date):
         mask = (df_daily["วันที่จริง"] >= start) & (df_daily["วันที่จริง"] <= end)
         return df_daily[mask], start, end
 
+
 # ------------------------------
 # UI
 # ------------------------------
@@ -317,16 +390,17 @@ with st.sidebar:
 
 st.title("🐳 วาฬวาฬ - บัญชีรายรับรายจ่าย (Cloud)")
 
-tab_income, tab_expense, tab_summary = st.tabs(["📥 รายรับ", "📤 รายจ่าย", "📊 ผลรวม & กราฟ"])
+tab_income, tab_expense, tab_summary = st.tabs(["📥 รายรับ", "📤 รายจ่าย", "📊 ผลประกอบการ & กราฟ"])
 
 # TAB รายรับ
 with tab_income:
     st.subheader("บันทึกรายรับประจำวัน")
     d_in = st.date_input("วันที่ (รายรับ)", value=dt.date.today(), key="income_date")
     day = d_in.day
-    st.caption(f"จะบันทึกลงแถว 'วันที่' = {day} ในชีต '{INCOME_SHEET_NAME}'")
+    st.caption(f"จะบันทึกลงแถว 'วันที่' = {day} ในชีตของเดือนนั้น")
 
-    inc_df = load_income_df()
+
+    inc_df = load_income_df(d_in)
     if not inc_df.empty:
         row = inc_df.loc[inc_df["วันที่"] == day]
     else:
@@ -350,14 +424,14 @@ with tab_income:
         lineman = st.number_input("LINE Man 🛵", min_value=0.0, step=10.0, value=get_inc_val("LINE Man"))
 
     if st.button("บันทึกรายรับวันนี้", type="primary"):
-        # อัปเดตรายรับลง Google Sheets
-        update_income_row(day, cash, scan, half, grab, shopee, lineman)
+        # อัปเดตรายรับลง Google Sheets (แยกชีตตามเดือน)
+        update_income_row(d_in, cash, scan, half, grab, shopee, lineman)
         st.success("บันทึกรายรับเรียบร้อยแล้ว ✅")
         # โหลดข้อมูลรายรับใหม่หลังอัปเดต เพื่อให้ตารางด้านล่างเป็นค่าล่าสุดทันที
-        inc_df = load_income_df()
+        inc_df = load_income_df(d_in)
 
     if not inc_df.empty:
-        st.markdown("#### ตารางรายรับทั้งเดือน (จากชีต)")
+        st.markdown("#### ตารางรายรับทั้งเดือน (จากชีตของเดือนนั้น)")
         st.dataframe(inc_df, use_container_width=True)
 
 # TAB รายจ่าย
@@ -365,9 +439,10 @@ with tab_expense:
     st.subheader("บันทึกรายจ่ายประจำวัน")
     d_ex = st.date_input("วันที่ (รายจ่าย)", value=dt.date.today(), key="expense_date")
     day_e = d_ex.day
-    st.caption(f"จะบันทึกลงวันที่ {day_e} ในชีต '{EXPENSE_SHEET_NAME}'")
+    st.caption(f"จะบันทึกลงวันที่ {day_e} ในชีตของเดือนนั้น")
 
-    exp_df = load_expense_df()
+
+    exp_df = load_expense_df(d_ex)
     if "รายการรายจ่าย/วันที่" in exp_df.columns:
         items = exp_df["รายการรายจ่าย/วันที่"].dropna().tolist()
     else:
@@ -378,7 +453,7 @@ with tab_expense:
     else:
         st.markdown("เลือกติ๊ก ✔ รายการที่มีค่าใช้จ่ายวันนี้ แล้วใส่จำนวนเงินในตาราง จากนั้นกดปุ่ม **บันทึกรายจ่ายวันนี้**")
 
-        # เตรียมข้อมูลเริ่มต้นในรูปแบบตารางให้กระชับ
+
         col_day = str(day_e)
         default_amounts = []
         for item_name in items:
@@ -418,15 +493,16 @@ with tab_expense:
             saved_any = False
             for _, row_state in edited_items.iterrows():
                 if bool(row_state["เลือก"]) and float(row_state["จำนวนเงิน (บาท)"]) > 0:
-                    update_expense_cell(day_e, row_state["รายการรายจ่าย"], float(row_state["จำนวนเงิน (บาท)"]))
+                    update_expense_cell(d_ex, day_e, row_state["รายการรายจ่าย"], float(row_state["จำนวนเงิน (บาท)"]))
                     saved_any = True
 
             if saved_any:
                 st.success("บันทึกรายจ่ายสำหรับรายการที่เลือกเรียบร้อยแล้ว ✅")
                 # โหลดข้อมูลรายจ่ายใหม่ เพื่อให้ตารางด้านล่างแสดงค่าล่าสุดทันที
-                exp_df = load_expense_df()
+                exp_df = load_expense_df(d_ex)
             else:
                 st.warning("กรุณาติ๊กเลือกอย่างน้อย 1 รายการ และใส่จำนวนเงินมากกว่า 0 บาท")
+
 
         col_day = str(day_e)
         st.markdown("#### รายการรายจ่ายของวันนั้น")
@@ -489,12 +565,16 @@ table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
 th, td {{ border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }}
 th {{ background:#f1f3ff; text-align:center; }}
 .summary-box {{ margin-top:12px; padding:10px 12px; background:#f7fbff; border-radius:8px; border:1px solid #dde7ff; }}
-.btn-print {{ margin-top:12px; padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
+.btn-print {{ padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
 .btn-print:hover {{ opacity:0.9; }}
+.header-row {{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }}
 </style>
 </head>
 <body>
-<h2>รายงานสรุปรายรับ–รายจ่าย</h2>
+<div class='header-row'>
+  <h2>รายงานสรุปรายรับ–รายจ่าย</h2>
+  <button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
+</div>
 <p>ช่วงวันที่: <strong>{period_text}</strong></p>
 <div class='summary-box'>
     <div>รวมรายรับ: <strong>{total_income:,.2f}</strong> บาท</div>
@@ -514,10 +594,8 @@ th {{ background:#f1f3ff; text-align:center; }}
         {table_rows}
     </tbody>
 </table>
-<button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
 </body></html>"""
 
-            st.markdown("#### พรีวิวรายงานสรุปรายรับ–รายจ่าย (HTML)")
             components.html(report_html, height=500, scrolling=True)
 
         if filtered.empty:
