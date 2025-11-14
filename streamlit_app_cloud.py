@@ -54,10 +54,10 @@ def get_workbook():
 
     try:
         sh = client.open_by_key(sheet_id)
-    except SpreadsheetNotFound as e:
+    except SpreadsheetNotFound:
         st.error("หาไฟล์ Google Sheets ไม่เจอจาก sheet_id นี้")
         st.stop()
-    except APIError as e:
+    except APIError:
         st.error(
             "Google Sheets API ไม่อนุญาตให้เข้าไฟล์นี้ ตรวจสอบว่าแชร์ไฟล์ให้ Service Account แล้วและเปิด Google Sheets API / Drive API แล้ว"
         )
@@ -80,15 +80,20 @@ def ws_to_df(ws):
 
 
 def _get_monthly_sheet_title(base_name: str, ref_date: dt.date) -> str:
-    """ชื่อชีตตามเดือน เช่น รายรับ_2025_11"""
+    """สร้างชื่อชีตตามเดือน เช่น รายรับ_2025_11"""
     return f"{base_name}_{ref_date.year}_{ref_date.month:02d}"
 
 
 def get_worksheet_for_month(base_name: str, ref_date: dt.date, kind: str, create_if_missing: bool):
-    """คืนค่า worksheet ของเดือนนั้น ๆ
-    - ถ้า create_if_missing=False: ถ้าไม่พบชีตตามเดือน จะ fallback ไปใช้ชีตพื้นฐาน (base_name)
-    - ถ้า create_if_missing=True: ถ้าไม่พบ จะพยายามสร้างชีตใหม่โดยใช้ชีตพื้นฐานเป็น template
-    kind: "income" หรือ "expense" เพื่อใช้กำหนด header เริ่มต้นเมื่อไม่มี template
+    """
+    คืนค่า worksheet ของเดือนที่ต้องการ
+
+    - ถ้า create_if_missing=False:
+        ถ้าไม่พบชีตตามเดือน จะ fallback ไปใช้ชีตพื้นฐาน (base_name)
+    - ถ้า create_if_missing=True:
+        ถ้าไม่พบ จะสร้างชีตใหม่โดยใช้ชีตพื้นฐานเป็น template ถ้ามี
+
+    kind: "income" หรือ "expense" เพื่อกำหนด header เริ่มต้นเมื่อไม่มี template
     """
     sh = get_workbook()
     monthly_title = _get_monthly_sheet_title(base_name, ref_date)
@@ -99,7 +104,7 @@ def get_worksheet_for_month(base_name: str, ref_date: dt.date, kind: str, create
     except WorksheetNotFound:
         pass
 
-    # ถ้าไม่ต้องการสร้างใหม่ ให้ fallback ไปใช้ชีตพื้นฐาน (ถ้ามี)
+    # ถ้าไม่ต้องสร้างใหม่ ให้ fallback ไปใช้ชีตพื้นฐาน (ถ้ามี)
     if not create_if_missing:
         try:
             return sh.worksheet(base_name)
@@ -113,7 +118,7 @@ def get_worksheet_for_month(base_name: str, ref_date: dt.date, kind: str, create
         template_ws = sh.worksheet(base_name)
         template_data = template_ws.get_all_values()
     except WorksheetNotFound:
-        template_ws = None
+        template_ws = None  # noqa: F841
 
     if template_data:
         header_row = template_data[0]
@@ -333,6 +338,42 @@ def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date
     df = df[df["ยอดรวม"] > 0]
     df = df.rename(columns={"รายการรายจ่าย/วันที่": "รายการ"})
     return df
+
+
+def build_income_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date):
+    """สร้างข้อมูลสำหรับกราฟวงกลม รายรับตามประเภท ในช่วงวันที่ที่เลือก"""
+    inc = load_income_df(base_date)
+    if inc.empty:
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+
+    y, mth = base_date.year, base_date.month
+    cur = start_date
+    days = []
+    while cur <= end_date:
+        if cur.year == y and cur.month == mth:
+            days.append(cur.day)
+        cur += dt.timedelta(days=1)
+
+    if not days:
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+
+    inc_sel = inc[inc["วันที่"].isin(days)].copy()
+    if inc_sel.empty:
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+
+    income_cols = ["เงินสด", "สแกน", "คนละครึ่ง", "Grab", "Shopee", "LINE Man"]
+    rows = []
+    for col in income_cols:
+        if col in inc_sel.columns:
+            total = float(pd.to_numeric(inc_sel[col], errors="coerce").sum())
+        else:
+            total = 0.0
+        if total > 0:
+            rows.append({"ประเภท": col, "ยอดรวม": total})
+
+    if not rows:
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+    return pd.DataFrame(rows)
 
 
 def filter_by_mode(df_daily, mode: str, base_date: dt.date):
@@ -557,7 +598,12 @@ with tab_summary:
             if end_d != start_d:
                 period_text = f"{start_d.strftime('%d/%m/%Y')} - {end_d.strftime('%d/%m/%Y')}"
 
-            report_html = f"""<html><head><meta charset='utf-8'>
+            period_text_str = period_text
+            total_income_str = f"{total_income:,.2f}"
+            total_expense_str = f"{total_expense:,.2f}"
+            profit_str = f"{profit:,.2f}"
+
+            report_html = """<html><head><meta charset='utf-8'>
 <style>
 body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:16px; color:#222; }}
 h2 {{ margin-top:0; }}
@@ -577,9 +623,9 @@ th {{ background:#f1f3ff; text-align:center; }}
 </div>
 <p>ช่วงวันที่: <strong>{period_text}</strong></p>
 <div class='summary-box'>
-    <div>รวมรายรับ: <strong>{total_income:,.2f}</strong> บาท</div>
-    <div>รวมรายจ่าย: <strong>{total_expense:,.2f}</strong> บาท</div>
-    <div>กำไรสุทธิ: <strong>{profit:,.2f}</strong> บาท</div>
+    <div>รวมรายรับ: <strong>{total_income}</strong> บาท</div>
+    <div>รวมรายจ่าย: <strong>{total_expense}</strong> บาท</div>
+    <div>กำไรสุทธิ: <strong>{profit}</strong> บาท</div>
 </div>
 <table>
     <thead>
@@ -594,7 +640,13 @@ th {{ background:#f1f3ff; text-align:center; }}
         {table_rows}
     </tbody>
 </table>
-</body></html>"""
+</body></html>""".format(
+                period_text=period_text_str,
+                total_income=total_income_str,
+                total_expense=total_expense_str,
+                profit=profit_str,
+                table_rows=table_rows,
+            )
 
             components.html(report_html, height=500, scrolling=True)
 
@@ -607,7 +659,7 @@ th {{ background:#f1f3ff; text-align:center; }}
 
             m1, m2, m3 = st.columns(3)
             m1.metric("รวมรายรับ", f"{total_inc:,.0f} บาท")
-            m2.metric("รวมรายจ่าย", f"{total_exp:,.0f} บาท")
+            m2.metric("รวมจ่าย", f"{total_exp:,.0f} บาท")
             m3.metric("กำไรสุทธิ", f"{net:,.0f} บาท")
 
             st.markdown(f"ช่วงวันที่ {start_d.strftime('%d/%m/%Y')} - {end_d.strftime('%d/%m/%Y')}")
@@ -640,19 +692,39 @@ th {{ background:#f1f3ff; text-align:center; }}
             )
             st.altair_chart(bar, use_container_width=True)
 
-            st.markdown("#### กราฟวงกลม รายจ่ายตามประเภท")
-            pie_df = build_expense_pie(start_d, end_d, base_date)
-            if pie_df.empty:
-                st.info("ไม่มีข้อมูลรายจ่ายสำหรับทำกราฟวงกลมในช่วงนี้")
-            else:
-                pie = (
-                    alt.Chart(pie_df)
-                    .mark_arc()
-                    .encode(
-                        theta="ยอดรวม:Q",
-                        color="รายการ:N",
-                        tooltip=["รายการ:N", "ยอดรวม:Q"],
+            st.markdown("#### กราฟวงกลม รายรับ / รายจ่าย ตามประเภท")
+            col_in, col_ex = st.columns(2)
+
+            with col_in:
+                pie_inc_df = build_income_pie(start_d, end_d, base_date)
+                if pie_inc_df.empty:
+                    st.info("ไม่มีข้อมูลรายรับสำหรับทำกราฟวงกลมในช่วงนี้")
+                else:
+                    pie_inc = (
+                        alt.Chart(pie_inc_df)
+                        .mark_arc()
+                        .encode(
+                            theta="ยอดรวม:Q",
+                            color="ประเภท:N",
+                            tooltip=["ประเภท:N", "ยอดรวม:Q"],
+                        )
+                        .properties(height=350)
                     )
-                    .properties(height=350)
-                )
-                st.altair_chart(pie, use_container_width=True)
+                    st.altair_chart(pie_inc, use_container_width=True)
+
+            with col_ex:
+                pie_df = build_expense_pie(start_d, end_d, base_date)
+                if pie_df.empty:
+                    st.info("ไม่มีข้อมูลรายจ่ายสำหรับทำกราฟวงกลมในช่วงนี้")
+                else:
+                    pie = (
+                        alt.Chart(pie_df)
+                        .mark_arc()
+                        .encode(
+                            theta="ยอดรวม:Q",
+                            color="รายการ:N",
+                            tooltip=["รายการ:N", "ยอดรวม:Q"],
+                        )
+                        .properties(height=350)
+                    )
+                    st.altair_chart(pie, use_container_width=True)
