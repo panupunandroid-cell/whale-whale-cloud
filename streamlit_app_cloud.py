@@ -37,7 +37,17 @@ def get_gsheet_client():
 @st.cache_resource
 def get_workbook():
     client = get_gsheet_client()
-    sh = client.open_by_key(st.secrets["sheet_id"])
+    # รองรับทั้ง sheet_id ที่อยู่ top-level และอยู่ในกลุ่ม gcp_service_account
+    sheet_id = st.secrets.get("sheet_id", None)
+    if sheet_id is None:
+        sa = st.secrets.get("gcp_service_account", {})
+        sheet_id = sa.get("sheet_id", None)
+    if sheet_id is None:
+        st.error("ไม่พบค่า 'sheet_id' ใน Secrets ของแอป\n\n"
+                 "ให้เพิ่มบรรทัดนี้ในหน้า Secrets:\n"
+                 "sheet_id = \"1a_jzfPs1pQJGEx_QgnTs3qFAMfUFLm5JN9E_5QNSMvM\"")
+        st.stop()
+    sh = client.open_by_key(sheet_id)
     return sh
 
 def ws_to_df(ws):
@@ -49,7 +59,6 @@ def ws_to_df(ws):
     rows = data[1:]
     df = pd.DataFrame(rows, columns=header)
     df = df.replace('', pd.NA)
-    # เคลียร์ช่องว่างหัวตาราง ป้องกัน KeyError
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -69,12 +78,10 @@ def load_income_df():
     if df.empty:
         return df
 
-    # ถ้าไม่มีคอลัมน์ชื่อ 'วันที่' ให้เดาว่าคอลัมน์แรกคือวันที่
     if "วันที่" not in df.columns:
         first_col = df.columns[0]
         df = df.rename(columns={first_col: "วันที่"})
 
-    # แปลงคอลัมน์วันที่เป็นตัวเลข
     try:
         df["วันที่"] = pd.to_numeric(df["วันที่"], errors="coerce")
     except KeyError:
@@ -107,16 +114,13 @@ def load_expense_df():
     if df.empty:
         return df
 
-    # จัดการชื่อคอลัมน์แรกสำหรับรายการรายจ่าย
     if "รายการรายจ่าย/วันที่" not in df.columns and len(df.columns) > 0:
         first_col = df.columns[0]
         df = df.rename(columns={first_col: "รายการรายจ่าย/วันที่"})
 
-    # ตัดแถวรวมทั้งเดือนออกถ้ามี
     if "รายการรายจ่าย/วันที่" in df.columns:
         df = df[df["รายการรายจ่าย/วันที่"] != "รวมทั้งเดือน"].copy()
 
-    # แปลงคอลัมน์ตัวเลข (1-31) เป็นตัวเลข
     for col in df.columns:
         col_str = str(col).strip()
         if col_str.isdigit():
@@ -139,7 +143,6 @@ def update_income_row(day, cash, scan, half, grab, shopee, lineman):
     try:
         col_day = header.index("วันที่") + 1
     except ValueError:
-        # เดาว่าคอลัมน์แรกคือวันที่
         col_day = 1
 
     def col_idx(col_name):
@@ -184,14 +187,12 @@ def update_expense_cell(day, item_name, amount):
         return
 
     header = [str(h).strip() for h in data[0]]
-    # หา column วันที่
     try:
         col_day = header.index(str(day)) + 1
     except ValueError:
         st.error(f"ไม่พบคอลัมน์วันที่ {day} ในชีตรายจ่ายร้าน")
         return
 
-    # หา row ของชื่อรายการ
     target_row = None
     for i in range(1, len(data)):
         if data[i][0] == item_name:
@@ -212,14 +213,12 @@ def build_daily_summary(base_date: dt.date):
     inc = load_income_df()
     exp = load_expense_df()
 
-    # income
     if inc.empty:
         inc_daily = pd.DataFrame(columns=["วันที่", "รวมรับ"])
     else:
         inc_daily = inc[["วันที่", "รวมต่อวัน"]].copy()
         inc_daily = inc_daily.rename(columns={"รวมต่อวัน": "รวมรับ"})
 
-    # expense
     if exp.empty:
         exp_daily = pd.DataFrame(columns=["วันที่", "รวมจ่าย"])
     else:
@@ -288,7 +287,6 @@ def filter_by_mode(df_daily, mode: str, base_date: dt.date):
         year = base_date.year
         month = base_date.month
         start = dt.date(year, month, 1)
-        # ใช้วันสุดท้ายของเดือนอย่างง่าย
         if month == 12:
             end = dt.date(year, 12, 31)
         else:
