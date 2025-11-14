@@ -372,12 +372,47 @@ with tab_expense:
     if not items:
         st.warning("ชีต 'รายจ่าย' ยังไม่มีรายการรายจ่าย กรุณาเตรียมโครงสร้างใน Google Sheets ก่อน")
     else:
-        item = st.selectbox("เลือกประเภทค่าใช้จ่าย", items)
-        amount = st.number_input("จำนวนเงิน", min_value=0.0, step=10.0, value=0.0)
+        st.markdown("เลือกติ๊ก ✔ รายการที่มีค่าใช้จ่ายวันนี้ แล้วใส่จำนวนเงินในช่องด้านขวา จากนั้นกดปุ่ม **บันทึกรายจ่ายวันนี้**")
 
-        if st.button("บันทึกรายจ่ายรายการนี้", type="primary"):
-            update_expense_cell(day_e, item, amount)
-            st.success("บันทึกรายจ่ายเรียบร้อยแล้ว ✅")
+        # หัวตาราง
+        head_cols = st.columns([0.8, 3.0, 2.0])
+        with head_cols[0]:
+            st.markdown("**เลือก**")
+        with head_cols[1]:
+            st.markdown("**รายการรายจ่าย**")
+        with head_cols[2]:
+            st.markdown("**จำนวนเงิน (บาท)**")
+
+        row_states = []
+        for idx_item, item_name in enumerate(items):
+            c0, c1, c2 = st.columns([0.8, 3.0, 2.0])
+            with c0:
+                checked = st.checkbox("", key=f"exp_chk_{idx_item}")
+            with c1:
+                st.markdown(item_name)
+            with c2:
+                amount = st.number_input(
+                    "จำนวนเงิน",
+                    min_value=0.0,
+                    step=10.0,
+                    value=0.0,
+                    format="%.2f",
+                    key=f"exp_amt_{idx_item}",
+                    label_visibility="hidden",
+                )
+            row_states.append((item_name, checked, amount))
+
+        if st.button("บันทึกรายจ่ายวันนี้", type="primary"):
+            saved_any = False
+            for item_name, checked, amount in row_states:
+                if checked and amount > 0:
+                    update_expense_cell(day_e, item_name, amount)
+                    saved_any = True
+
+            if saved_any:
+                st.success("บันทึกรายจ่ายสำหรับรายการที่เลือกเรียบร้อยแล้ว ✅")
+            else:
+                st.warning("กรุณาติ๊กเลือกอย่างน้อย 1 รายการ และใส่จำนวนเงินมากกว่า 0 บาท")
 
         col_day = str(day_e)
         st.markdown("#### รายการรายจ่ายของวันนั้น")
