@@ -517,8 +517,8 @@ th {{ background:#f1f3ff; text-align:center; }}
 <button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
 </body></html>"""
 
-            st.markdown("#### พรีวิวรายงานสรุปรายรับ–รายจ่าย (HTML)")
-            components.html(report_html, height=500, scrolling=True)
+            #st.markdown("#### พรีวิวรายงานสรุปรายรับ–รายจ่าย (HTML)")
+            #components.html(report_html, height=500, scrolling=True)
 
         if filtered.empty:
             st.warning("ไม่มีข้อมูลในช่วงวันที่ที่เลือก")
