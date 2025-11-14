@@ -350,7 +350,14 @@ with tab_income:
 
     if st.button("บันทึกรายรับวันนี้", type="primary"):
         update_income_row(day, cash, scan, half, grab, shopee, lineman)
+        # ตั้งค่าสถานะไว้ให้แสดงหลังรีเฟรช
+        st.session_state["income_saved"] = True
+        st.rerun()
+
+    # แสดงสถานะสำเร็จหลังจากรีเฟรชแล้ว
+    if st.session_state.get("income_saved", False):
         st.success("บันทึกรายรับเรียบร้อยแล้ว ✅")
+        st.session_state["income_saved"] = False
 
     if not inc_df.empty:
         st.markdown("#### ตารางรายรับทั้งเดือน (จากชีต)")
@@ -372,41 +379,46 @@ with tab_expense:
     if not items:
         st.warning("ชีต 'รายจ่าย' ยังไม่มีรายการรายจ่าย กรุณาเตรียมโครงสร้างใน Google Sheets ก่อน")
     else:
-        st.markdown("เลือกติ๊ก ✔ รายการที่มีค่าใช้จ่ายวันนี้ แล้วใส่จำนวนเงินในช่องด้านขวา จากนั้นกดปุ่ม **บันทึกรายจ่ายวันนี้**")
+        st.markdown("เลือกติ๊ก ✔ รายการที่มีค่าใช้จ่ายวันนี้ แล้วใส่จำนวนเงินในตาราง จากนั้นกดปุ่ม **บันทึกรายจ่ายวันนี้**")
 
-        # หัวตาราง
-        head_cols = st.columns([0.8, 3.0, 2.0])
-        with head_cols[0]:
-            st.markdown("**เลือก**")
-        with head_cols[1]:
-            st.markdown("**รายการรายจ่าย**")
-        with head_cols[2]:
-            st.markdown("**จำนวนเงิน (บาท)**")
+        # เตรียมข้อมูลเริ่มต้นในรูปแบบตารางให้กระชับ
+        col_day = str(day_e)
+        default_amounts = []
+        for item_name in items:
+            amt = 0.0
+            if col_day in exp_df.columns:
+                row_match = exp_df[exp_df["รายการรายจ่าย/วันที่"] == item_name]
+                if not row_match.empty:
+                    v = pd.to_numeric(row_match.iloc[0][col_day], errors="coerce")
+                    if pd.notna(v):
+                        amt = float(v)
+            default_amounts.append(amt)
 
-        row_states = []
-        for idx_item, item_name in enumerate(items):
-            c0, c1, c2 = st.columns([0.8, 3.0, 2.0])
-            with c0:
-                checked = st.checkbox("", key=f"exp_chk_{idx_item}")
-            with c1:
-                st.markdown(item_name)
-            with c2:
-                amount = st.number_input(
-                    "จำนวนเงิน",
-                    min_value=0.0,
-                    step=10.0,
-                    value=0.0,
-                    format="%.2f",
-                    key=f"exp_amt_{idx_item}",
-                    label_visibility="hidden",
-                )
-            row_states.append((item_name, checked, amount))
+        df_items = pd.DataFrame({
+            "เลือก": [False] * len(items),
+            "รายการรายจ่าย": items,
+            "จำนวนเงิน (บาท)": default_amounts,
+        })
+
+        edited_items = st.data_editor(
+            df_items,
+            key="expense_editor",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "เลือก": st.column_config.CheckboxColumn("เลือก"),
+                "รายการรายจ่าย": st.column_config.TextColumn("รายการรายจ่าย", disabled=True),
+                "จำนวนเงิน (บาท)": st.column_config.NumberColumn(
+                    "จำนวนเงิน (บาท)", min_value=0.0, step=10.0, format="%.2f"
+                ),
+            },
+        )
 
         if st.button("บันทึกรายจ่ายวันนี้", type="primary"):
             saved_any = False
-            for item_name, checked, amount in row_states:
-                if checked and amount > 0:
-                    update_expense_cell(day_e, item_name, amount)
+            for _, row_state in edited_items.iterrows():
+                if bool(row_state["เลือก"]) and float(row_state["จำนวนเงิน (บาท)"]) > 0:
+                    update_expense_cell(day_e, row_state["รายการรายจ่าย"], float(row_state["จำนวนเงิน (บาท)"]))
                     saved_any = True
 
             if saved_any:
