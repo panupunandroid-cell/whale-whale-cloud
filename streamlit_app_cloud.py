@@ -7,6 +7,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
 
+from pathlib import Path
+
 # ------------------------------
 # CONFIG
 # ------------------------------
@@ -305,6 +307,9 @@ def filter_by_mode(df_daily, mode: str, base_date: dt.date):
 # UI
 # ------------------------------
 with st.sidebar:
+    logo_path = Path(__file__).with_name("logo_whale.png")
+    if logo_path.exists():
+        st.image(str(logo_path), use_container_width=True)
     st.markdown("### 🐳 วาฬวาฬ (Cloud)")
     st.caption("แอปบันทึกบัญชีรายรับรายจ่ายบน Google Sheets")
     base_date = st.date_input("เดือนอ้างอิง (ใช้สำหรับคำนวณรายงาน)", value=dt.date.today())
@@ -334,14 +339,14 @@ with tab_income:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        cash = st.number_input("เงินสด", min_value=0.0, step=10.0, value=get_inc_val("เงินสด"))
-        grab = st.number_input("Grab", min_value=0.0, step=10.0, value=get_inc_val("Grab"))
+        cash = st.number_input("เงินสด 💵", min_value=0.0, step=10.0, value=get_inc_val("เงินสด"))
+        grab = st.number_input("Grab 🛵", min_value=0.0, step=10.0, value=get_inc_val("Grab"))
     with c2:
-        scan = st.number_input("สแกน", min_value=0.0, step=10.0, value=get_inc_val("สแกน"))
-        shopee = st.number_input("Shopee", min_value=0.0, step=10.0, value=get_inc_val("Shopee"))
+        scan = st.number_input("สแกน 📲", min_value=0.0, step=10.0, value=get_inc_val("สแกน"))
+        shopee = st.number_input("Shopee 🛒", min_value=0.0, step=10.0, value=get_inc_val("Shopee"))
     with c3:
-        half = st.number_input("คนละครึ่ง", min_value=0.0, step=10.0, value=get_inc_val("คนละครึ่ง"))
-        lineman = st.number_input("LINE Man", min_value=0.0, step=10.0, value=get_inc_val("LINE Man"))
+        half = st.number_input("คนละครึ่ง 🤝", min_value=0.0, step=10.0, value=get_inc_val("คนละครึ่ง"))
+        lineman = st.number_input("LINE Man 🛵", min_value=0.0, step=10.0, value=get_inc_val("LINE Man"))
 
     if st.button("บันทึกรายรับวันนี้", type="primary"):
         update_income_row(day, cash, scan, half, grab, shopee, lineman)
