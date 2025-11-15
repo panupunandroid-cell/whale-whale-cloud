@@ -326,7 +326,7 @@ def build_daily_summary(base_date: dt.date):
 def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date):
     exp = load_expense_df(base_date)
     if exp.empty:
-        return pd.DataFrame(columns=["รายการ", "ยอดรวม"])
+        return pd.DataFrame(columns=["รายการ", "ยอดรวม", "เปอร์เซ็นต์", "เปอร์เซ็นต์_ข้อความ"])
 
     y, mth = base_date.year, base_date.month
     cur = start_date
@@ -338,12 +338,19 @@ def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date
 
     day_cols = [d for d in days if d in exp.columns]
     if not day_cols:
-        return pd.DataFrame(columns=["รายการ", "ยอดรวม"])
+        return pd.DataFrame(columns=["รายการ", "ยอดรวม", "เปอร์เซ็นต์", "เปอร์เซ็นต์_ข้อความ"])
 
     exp["ยอดรวม"] = exp[day_cols].sum(axis=1)
     df = exp[["รายการรายจ่าย/วันที่", "ยอดรวม"]].copy()
     df = df[df["ยอดรวม"] > 0]
     df = df.rename(columns={"รายการรายจ่าย/วันที่": "รายการ"})
+
+    total = df["ยอดรวม"].sum()
+    if total > 0:
+        df["เปอร์เซ็นต์"] = df["ยอดรวม"] / total * 100.0
+    else:
+        df["เปอร์เซ็นต์"] = 0.0
+    df["เปอร์เซ็นต์_ข้อความ"] = df["เปอร์เซ็นต์"].map(lambda x: f"{x:.1f}%")
     return df
 
 
@@ -379,8 +386,16 @@ def build_income_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date)
             rows.append({"ประเภท": col, "ยอดรวม": total})
 
     if not rows:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
-    return pd.DataFrame(rows)
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "เปอร์เซ็นต์_ข้อความ"])
+
+    df = pd.DataFrame(rows)
+    total = df["ยอดรวม"].sum()
+    if total > 0:
+        df["เปอร์เซ็นต์"] = df["ยอดรวม"] / total * 100.0
+    else:
+        df["เปอร์เซ็นต์"] = 0.0
+    df["เปอร์เซ็นต์_ข้อความ"] = df["เปอร์เซ็นต์"].map(lambda x: f"{x:.1f}%")
+    return df
 
 
 def filter_by_mode(df_daily, mode: str, base_date: dt.date):
@@ -708,9 +723,13 @@ th {{ background:#f1f3ff; text-align:center; }}
                 if pie_inc_df.empty:
                     st.info("ไม่มีข้อมูลรายรับสำหรับทำกราฟวงกลมในช่วงนี้")
                 else:
+                    # กราฟวงกลมรายรับ: เส้นขอบดำบาง ๆ + แสดงเปอร์เซ็นต์ในชิ้นพาย
                     pie_inc = (
                         alt.Chart(pie_inc_df)
-                        .mark_arc()
+                        .mark_arc(
+                            stroke="black",
+                            strokeWidth=1,
+                        )
                         .encode(
                             theta="ยอดรวม:Q",
                             color=alt.Color(
@@ -720,25 +739,59 @@ th {{ background:#f1f3ff; text-align:center; }}
                                     range=["#006633", "#00FF00", "#EE4D2D", "#87CEFA", "#7B68EE", "#4169E1"],
                                 ),
                             ),
-                            tooltip=["ประเภท:N", "ยอดรวม:Q"],
+                            tooltip=[
+                                "ประเภท:N",
+                                alt.Tooltip("ยอดรวม:Q", format=",.2f", title="ยอดรวม (บาท)"),
+                                alt.Tooltip("เปอร์เซ็นต์:Q", format=".1f", title="เปอร์เซ็นต์ (%)"),
+                            ],
                         )
                         .properties(height=350)
                     )
-                    st.altair_chart(pie_inc, use_container_width=True)
+
+                    labels = (
+                        alt.Chart(pie_inc_df)
+                        .mark_text(radius=120, size=12)
+                        .encode(
+                            theta="ยอดรวม:Q",
+                            text="เปอร์เซ็นต์_ข้อความ:N",
+                            color=alt.value("black"),
+                        )
+                    )
+
+                    st.altair_chart(pie_inc + labels, use_container_width=True)
 
             with col_ex:
                 pie_df = build_expense_pie(start_d, end_d, base_date)
                 if pie_df.empty:
                     st.info("ไม่มีข้อมูลรายจ่ายสำหรับทำกราฟวงกลมในช่วงนี้")
                 else:
+                    # กราฟวงกลมรายจ่าย: เส้นขอบดำบาง ๆ + แสดงเปอร์เซ็นต์ในชิ้นพาย
                     pie = (
                         alt.Chart(pie_df)
-                        .mark_arc()
+                        .mark_arc(
+                            stroke="black",
+                            strokeWidth=1,
+                        )
                         .encode(
                             theta="ยอดรวม:Q",
                             color="รายการ:N",
-                            tooltip=["รายการ:N", "ยอดรวม:Q"],
+                            tooltip=[
+                                "รายการ:N",
+                                alt.Tooltip("ยอดรวม:Q", format=",.2f", title="ยอดรวม (บาท)"),
+                                alt.Tooltip("เปอร์เซ็นต์:Q", format=".1f", title="เปอร์เซ็นต์ (%)"),
+                            ],
                         )
                         .properties(height=350)
                     )
-                    st.altair_chart(pie, use_container_width=True)
+
+                    labels_ex = (
+                        alt.Chart(pie_df)
+                        .mark_text(radius=120, size=12)
+                        .encode(
+                            theta="ยอดรวม:Q",
+                            text="เปอร์เซ็นต์_ข้อความ:N",
+                            color=alt.value("black"),
+                        )
+                    )
+
+                    st.altair_chart(pie + labels_ex, use_container_width=True)
