@@ -460,7 +460,7 @@ with st.sidebar:
     base_date = st.date_input("เดือนอ้างอิง (ใช้สำหรับคำนวณรายงาน)", value=dt.date.today())
 
 st.title("🐳 วาฬวาฬ - บัญชีรายรับรายจ่าย (Cloud)")
-st.caption("เวอร์ชัน V.1.2")
+st.caption("เวอร์ชัน V.1.1")
 
 tab_income, tab_expense, tab_summary = st.tabs(["📥 รายรับ", "📤 รายจ่าย", "📊 ผลประกอบการ & กราฟ"])
 
@@ -611,9 +611,39 @@ with tab_summary:
             profit = total_income - total_expense
 
             # เตรียมแถวตารางรายวัน
+            weekday_colors = {
+                0: "#FFF9C4",  # จันทร์ เหลืองอ่อน
+                1: "#FCE4EC",  # อังคาร ชมพูอ่อน
+                2: "#E8F5E9",  # พุธ เขียวอ่อน
+                3: "#FFE0B2",  # พฤหัสฯ ส้มอ่อน
+                4: "#E3F2FD",  # ศุกร์ ฟ้าอ่อน
+                5: "#EDE7F6",  # เสาร์ ม่วงอ่อน
+                6: "#FFEBEE",  # อาทิตย์ แดงอ่อน
+            }
             table_rows = ""
             for _, r in filtered.iterrows():
                 day_label = r.get("วันที่แสดง", r.get("วันที่", ""))
+                # หาวันที่จริงเพื่อใช้ระบายสีตามวันในสัปดาห์
+                real_date = r.get("วันที่จริง")
+                weekday = None
+                try:
+                    if isinstance(real_date, dt.date):
+                        weekday = real_date.weekday()
+                    elif isinstance(real_date, str) and real_date:
+                        weekday = dt.date.fromisoformat(real_date).weekday()
+                except Exception:
+                    weekday = None
+
+                if weekday is None:
+                    # กรณีไม่มีคอลัมน์วันที่จริง ให้ลองใช้เลขวันที่ร่วมกับ base_date
+                    try:
+                        day_int = int(str(r.get("วันที่", "")).split()[0])
+                        weekday = dt.date(base_date.year, base_date.month, day_int).weekday()
+                    except Exception:
+                        weekday = None
+
+                bg_color = weekday_colors.get(weekday, "#FFFFFF")
+
                 try:
                     inc_val = float(r.get("รวมรับ", 0) or 0)
                 except Exception:
@@ -623,7 +653,16 @@ with tab_summary:
                 except Exception:
                     exp_val = 0.0
                 prof_val = inc_val - exp_val
-                table_rows += f"<tr><td>{day_label}</td><td style='text-align:right;'>{inc_val:,.2f}</td><td style='text-align:right;'>{exp_val:,.2f}</td><td style='text-align:right;'>{prof_val:,.2f}</td></tr>"
+
+                table_rows += (
+                    f"<tr style='background-color:{bg_color};'>"
+                    f"<td>{day_label}</td>"
+                    f"<td style='text-align:right;'>{inc_val:,.2f}</td>"
+                    f"<td style='text-align:right;'>{exp_val:,.2f}</td>"
+                    f"<td style='text-align:right;'>{prof_val:,.2f}</td>"
+                    f"</tr>"
+                )
+
 
             period_text = start_d.strftime("%d/%m/%Y")
             if end_d != start_d:
