@@ -717,7 +717,7 @@ th {{ background:#f1f3ff; text-align:center; }}
                                 "ประเภท:N",
                                 scale=alt.Scale(
                                     domain=["Grab", "LINE Man", "Shopee", "คนละครึ่ง", "สแกน", "เงินสด"],
-                                    range=["(#00B14F", "#00FF00", "#EE4D2D", "#87CEFA", "#7B68EE", "#4169E1"],
+                                    range=["(#006400", "#00FF00", "#EE4D2D", "#87CEFA", "#7B68EE", "#4169E1"],
                                 ),
                             ),
                             tooltip=["ประเภท:N", "ยอดรวม:Q"],
