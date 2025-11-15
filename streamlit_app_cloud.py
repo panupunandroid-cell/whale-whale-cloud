@@ -379,16 +379,8 @@ def build_income_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date)
             rows.append({"ประเภท": col, "ยอดรวม": total})
 
     if not rows:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "เปอร์เซ็นต์_ข้อความ"])
-
-    df = pd.DataFrame(rows)
-    total = df["ยอดรวม"].sum()
-    if total > 0:
-        df["เปอร์เซ็นต์"] = df["ยอดรวม"] / total * 100.0
-    else:
-        df["เปอร์เซ็นต์"] = 0.0
-    df["เปอร์เซ็นต์_ข้อความ"] = df["เปอร์เซ็นต์"].map(lambda x: f"{x:.1f}%")
-    return df
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+    return pd.DataFrame(rows)
 
 
 def filter_by_mode(df_daily, mode: str, base_date: dt.date):
@@ -716,31 +708,9 @@ th {{ background:#f1f3ff; text-align:center; }}
                 if pie_inc_df.empty:
                     st.info("ไม่มีข้อมูลรายรับสำหรับทำกราฟวงกลมในช่วงนี้")
                 else:
-                    # เลเยอร์เงาด้านหลัง (shadow)
-                    shadow = (
-                        alt.Chart(pie_inc_df)
-                        .mark_arc(
-                            innerRadius=0,
-                            outerRadius=170,
-                            stroke=None,
-                            opacity=0.15,
-                        )
-                        .encode(
-                            theta="ยอดรวม:Q",
-                            color=alt.value("black"),
-                        )
-                        .properties(height=350)
-                    )
-
-                    # ชิ้นพายจริง มีเส้นขอบดำบาง ๆ
                     pie_inc = (
                         alt.Chart(pie_inc_df)
-                        .mark_arc(
-                            innerRadius=0,
-                            outerRadius=160,
-                            stroke="black",
-                            strokeWidth=1,
-                        )
+                        .mark_arc()
                         .encode(
                             theta="ยอดรวม:Q",
                             color=alt.Color(
@@ -750,26 +720,11 @@ th {{ background:#f1f3ff; text-align:center; }}
                                     range=["#006633", "#00FF00", "#EE4D2D", "#87CEFA", "#7B68EE", "#4169E1"],
                                 ),
                             ),
-                            tooltip=[
-                                "ประเภท:N",
-                                alt.Tooltip("ยอดรวม:Q", format=",.2f", title="ยอดรวม (บาท)"),
-                                alt.Tooltip("เปอร์เซ็นต์:Q", format=".1f", title="เปอร์เซ็นต์ (%)"),
-                            ],
+                            tooltip=["ประเภท:N", "ยอดรวม:Q"],
                         )
+                        .properties(height=350)
                     )
-
-                    # ตัวเลขเปอร์เซ็นต์ 52.3% บนชิ้นพาย
-                    labels = (
-                        alt.Chart(pie_inc_df)
-                        .mark_text(radius=120, size=12)
-                        .encode(
-                            theta="ยอดรวม:Q",
-                            text="เปอร์เซ็นต์_ข้อความ:N",
-                            color=alt.value("black"),
-                        )
-                    )
-
-                    st.altair_chart(shadow + pie_inc + labels, use_container_width=True)
+                    st.altair_chart(pie_inc, use_container_width=True)
 
             with col_ex:
                 pie_df = build_expense_pie(start_d, end_d, base_date)
