@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import datetime as dt
+import base64
 # --- รีเซ็ต session อัตโนมัติเมื่อเปลี่ยนวัน ---
 if "last_open_date" not in st.session_state:
     st.session_state.last_open_date = dt.date.today()
@@ -324,13 +325,17 @@ def build_daily_summary(base_date: dt.date):
 
 
 def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date):
+    """สร้างข้อมูลสำหรับกราฟวงกลม รายจ่ายตามประเภท ในช่วงวันที่ที่เลือก
+
+    เพิ่มคอลัมน์เปอร์เซ็นต์ และป้ายแสดง (เช่น ค่าเช่าร้าน 55.0%) สำหรับใช้ใน legend
+    """
     exp = load_expense_df(base_date)
     if exp.empty:
-        return pd.DataFrame(columns=["รายการ", "ยอดรวม"])
+        return pd.DataFrame(columns=["รายการ", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
 
     y, mth = base_date.year, base_date.month
     cur = start_date
-    days = []
+    days: list[str] = []
     while cur <= end_date:
         if cur.year == y and cur.month == mth:
             days.append(str(cur.day))
@@ -338,49 +343,67 @@ def build_expense_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date
 
     day_cols = [d for d in days if d in exp.columns]
     if not day_cols:
-        return pd.DataFrame(columns=["รายการ", "ยอดรวม"])
+        return pd.DataFrame(columns=["รายการ", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
 
     exp["ยอดรวม"] = exp[day_cols].sum(axis=1)
     df = exp[["รายการรายจ่าย/วันที่", "ยอดรวม"]].copy()
     df = df[df["ยอดรวม"] > 0]
     df = df.rename(columns={"รายการรายจ่าย/วันที่": "รายการ"})
+
+    total_all = float(df["ยอดรวม"].sum()) if not df.empty else 0.0
+    if total_all > 0:
+        df["เปอร์เซ็นต์"] = df["ยอดรวม"] / total_all * 100.0
+    else:
+        df["เปอร์เซ็นต์"] = 0.0
+    df["ป้ายแสดง"] = df.apply(lambda r: f"{r['รายการ']} {r['เปอร์เซ็นต์']:.1f}%", axis=1)
     return df
 
 
 def build_income_pie(start_date: dt.date, end_date: dt.date, base_date: dt.date):
-    """สร้างข้อมูลสำหรับกราฟวงกลม รายรับตามประเภท ในช่วงวันที่ที่เลือก"""
+    """สร้างข้อมูลสำหรับกราฟวงกลม รายรับตามประเภท ในช่วงวันที่ที่เลือก
+
+    เพิ่มคอลัมน์เปอร์เซ็นต์ และป้ายแสดง (เช่น Grab 64.3%) สำหรับใช้ใน legend
+    """
     inc = load_income_df(base_date)
     if inc.empty:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
 
     y, mth = base_date.year, base_date.month
     cur = start_date
-    days = []
+    days: list[int] = []
     while cur <= end_date:
         if cur.year == y and cur.month == mth:
             days.append(cur.day)
         cur += dt.timedelta(days=1)
 
     if not days:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
 
     inc_sel = inc[inc["วันที่"].isin(days)].copy()
     if inc_sel.empty:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
 
     income_cols = ["เงินสด", "สแกน", "คนละครึ่ง", "Grab", "Shopee", "LINE Man"]
     rows = []
     for col in income_cols:
         if col in inc_sel.columns:
-            total = float(pd.to_numeric(inc_sel[col], errors="coerce").sum())
+            total_val = float(pd.to_numeric(inc_sel[col], errors="coerce").sum())
         else:
-            total = 0.0
-        if total > 0:
-            rows.append({"ประเภท": col, "ยอดรวม": total})
+            total_val = 0.0
+        if total_val > 0:
+            rows.append({"ประเภท": col, "ยอดรวม": total_val})
 
     if not rows:
-        return pd.DataFrame(columns=["ประเภท", "ยอดรวม"])
-    return pd.DataFrame(rows)
+        return pd.DataFrame(columns=["ประเภท", "ยอดรวม", "เปอร์เซ็นต์", "ป้ายแสดง"])
+
+    df = pd.DataFrame(rows)
+    total_all = float(df["ยอดรวม"].sum()) if not df.empty else 0.0
+    if total_all > 0:
+        df["เปอร์เซ็นต์"] = df["ยอดรวม"] / total_all * 100.0
+    else:
+        df["เปอร์เซ็นต์"] = 0.0
+    df["ป้ายแสดง"] = df.apply(lambda r: f"{r['ประเภท']} {r['เปอร์เซ็นต์']:.1f}%", axis=1)
+    return df
 
 
 def filter_by_mode(df_daily, mode: str, base_date: dt.date):
@@ -611,7 +634,18 @@ with tab_summary:
             total_expense_str = f"{total_expense:,.2f}"
             profit_str = f"{profit:,.2f}"
 
-            report_html = """<html><head><meta charset='utf-8'>
+            
+            # เตรียมโลโก้สำหรับฝังในรายงาน HTML
+            logo_data_url = ""
+            try:
+                logo_path = Path(__file__).with_name("logo_whale.png")
+                if logo_path.exists():
+                    logo_bytes = logo_path.read_bytes()
+                    logo_b64 = base64.b64encode(logo_bytes).decode("utf-8")
+                    logo_data_url = f"data:image/png;base64,{logo_b64}"
+            except Exception:
+                logo_data_url = ""
+report_html = """<html><head><meta charset='utf-8'>
 <style>
 body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:16px; color:#222; }}
 h2 {{ margin-top:0; }}
@@ -622,23 +656,28 @@ th {{ background:#f1f3ff; text-align:center; }}
 .btn-print {{ padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
 .btn-print:hover {{ opacity:0.9; }}
 .header-row {{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }}
+.logo-box {{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }}
+.logo-box img {{ max-height:60px; }}
 </style>
 </head>
 <body>
+<div class='logo-box'>
+  {logo_img_html}
+</div>
 <div class='header-row'>
   <h2>รายงานสรุปรายรับ–รายจ่าย</h2>
   <button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
 </div>
-<p>ช่วงวันที่: <strong>{period_text}</strong></p>
+<div>ช่วงวันที่: <b>{period_text}</b></div>
 <div class='summary-box'>
-    <div>รวมรายรับ: <strong>{total_income}</strong> บาท</div>
-    <div>รวมรายจ่าย: <strong>{total_expense}</strong> บาท</div>
-    <div>กำไรสุทธิ: <strong>{profit}</strong> บาท</div>
+  <div>รวมรายรับ: <b>{total_income} บาท</b></div>
+  <div>รวมรายจ่าย: <b>{total_expense} บาท</b></div>
+  <div>กำไรสุทธิ: <b>{profit} บาท</b></div>
 </div>
 <table>
     <thead>
         <tr>
-            <th>วันที่</th>
+            <th style='width:60px;'>วันที่</th>
             <th>รวมรับ (บาท)</th>
             <th>รวมจ่าย (บาท)</th>
             <th>กำไรต่อวัน (บาท)</th>
@@ -654,6 +693,9 @@ th {{ background:#f1f3ff; text-align:center; }}
                 total_expense=total_expense_str,
                 profit=profit_str,
                 table_rows=table_rows,
+                logo_img_html=(
+                    f"<img src='{logo_data_url}' alt='whale logo'>" if logo_data_url else ""
+                ),
             )
 
             components.html(report_html, height=500, scrolling=True)
@@ -714,13 +756,17 @@ th {{ background:#f1f3ff; text-align:center; }}
                         .encode(
                             theta="ยอดรวม:Q",
                             color=alt.Color(
-                                "ประเภท:N",
+                                "ป้ายแสดง:N",
                                 scale=alt.Scale(
-                                    domain=["Grab", "LINE Man", "Shopee", "คนละครึ่ง", "สแกน", "เงินสด"],
                                     range=["#006633", "#00FF00", "#EE4D2D", "#87CEFA", "#7B68EE", "#4169E1"],
                                 ),
+                                legend=alt.Legend(title="ประเภท"),
                             ),
-                            tooltip=["ประเภท:N", "ยอดรวม:Q"],
+                            tooltip=[
+                                "ประเภท:N",
+                                alt.Tooltip("ยอดรวม:Q", title="ยอดรวม (บาท)", format=",.2f"),
+                                alt.Tooltip("เปอร์เซ็นต์:Q", title="เปอร์เซ็นต์ (%)", format=".1f"),
+                            ],
                         )
                         .properties(height=350)
                     )
@@ -736,8 +782,15 @@ th {{ background:#f1f3ff; text-align:center; }}
                         .mark_arc()
                         .encode(
                             theta="ยอดรวม:Q",
-                            color="รายการ:N",
-                            tooltip=["รายการ:N", "ยอดรวม:Q"],
+                            color=alt.Color(
+                                "ป้ายแสดง:N",
+                                legend=alt.Legend(title="รายการ"),
+                            ),
+                            tooltip=[
+                                "รายการ:N",
+                                alt.Tooltip("ยอดรวม:Q", title="ยอดรวม (บาท)", format=",.2f"),
+                                alt.Tooltip("เปอร์เซ็นต์:Q", title="เปอร์เซ็นต์ (%)", format=".1f"),
+                            ],
                         )
                         .properties(height=350)
                     )
