@@ -645,49 +645,49 @@ with tab_summary:
                     logo_data_url = f"data:image/png;base64,{logo_b64}"
             except Exception:
                 logo_data_url = ""
-report_html = """<html><head><meta charset='utf-8'>
-<style>
-body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:16px; color:#222; }}
-h2 {{ margin-top:0; }}
-table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
-th, td {{ border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }}
-th {{ background:#f1f3ff; text-align:center; }}
-.summary-box {{ margin-top:12px; padding:10px 12px; background:#f7fbff; border-radius:8px; border:1px solid #dde7ff; }}
-.btn-print {{ padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
-.btn-print:hover {{ opacity:0.9; }}
-.header-row {{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }}
-.logo-box {{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }}
-.logo-box img {{ max-height:60px; }}
-</style>
-</head>
-<body>
-<div class='logo-box'>
-  {logo_img_html}
-</div>
-<div class='header-row'>
-  <h2>รายงานสรุปรายรับ–รายจ่าย</h2>
-  <button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
-</div>
-<div>ช่วงวันที่: <b>{period_text}</b></div>
-<div class='summary-box'>
-  <div>รวมรายรับ: <b>{total_income} บาท</b></div>
-  <div>รวมรายจ่าย: <b>{total_expense} บาท</b></div>
-  <div>กำไรสุทธิ: <b>{profit} บาท</b></div>
-</div>
-<table>
-    <thead>
-        <tr>
-            <th style='width:60px;'>วันที่</th>
-            <th>รวมรับ (บาท)</th>
-            <th>รวมจ่าย (บาท)</th>
-            <th>กำไรต่อวัน (บาท)</th>
-        </tr>
-    </thead>
-    <tbody>
-        {table_rows}
-    </tbody>
-</table>
-</body></html>""".format(
+            report_html = """<html><head><meta charset='utf-8'>
+            <style>
+            body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:16px; color:#222; }}
+            h2 {{ margin-top:0; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
+            th, td {{ border: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }}
+            th {{ background:#f1f3ff; text-align:center; }}
+            .summary-box {{ margin-top:12px; padding:10px 12px; background:#f7fbff; border-radius:8px; border:1px solid #dde7ff; }}
+            .btn-print {{ padding:6px 12px; border-radius:6px; border:none; background:#ff4b4b; color:white; cursor:pointer; font-size:13px; }}
+            .btn-print:hover {{ opacity:0.9; }}
+            .header-row {{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }}
+            .logo-box {{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }}
+            .logo-box img {{ max-height:60px; }}
+            </style>
+            </head>
+            <body>
+            <div class='logo-box'>
+              {logo_img_html}
+            </div>
+            <div class='header-row'>
+              <h2>รายงานสรุปรายรับ–รายจ่าย</h2>
+              <button class='btn-print' onclick='window.print()'>🖨️ พิมพ์รายงาน</button>
+            </div>
+            <div>ช่วงวันที่: <b>{period_text}</b></div>
+            <div class='summary-box'>
+              <div>รวมรายรับ: <b>{total_income} บาท</b></div>
+              <div>รวมรายจ่าย: <b>{total_expense} บาท</b></div>
+              <div>กำไรสุทธิ: <b>{profit} บาท</b></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style='width:60px;'>วันที่</th>
+                        <th>รวมรับ (บาท)</th>
+                        <th>รวมจ่าย (บาท)</th>
+                        <th>กำไรต่อวัน (บาท)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {table_rows}
+                </tbody>
+            </table>
+            </body></html>""".format(
                 period_text=period_text_str,
                 total_income=total_income_str,
                 total_expense=total_expense_str,
