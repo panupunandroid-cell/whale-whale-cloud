@@ -1,13 +1,5 @@
 
 import streamlit as st
-# --- รีเซ็ต session อัตโนมัติเมื่อเปลี่ยนวัน ---
-if "last_open_date" not in st.session_state:
-    st.session_state.last_open_date = dt.date.today()
-
-if st.session_state.last_open_date != dt.date.today():
-    st.session_state.clear()
-    st.session_state.last_open_date = dt.date.today()
-# -------------------------------------------------
 import pandas as pd
 import altair as alt
 import datetime as dt
